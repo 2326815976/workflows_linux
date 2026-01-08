@@ -125,7 +125,6 @@ jobs:
               tauri::Builder::default()
                   .setup(move |app| {
                       use tauri::Manager;
-                      use tauri::Emitter;
                       let window = app.get_webview_window("main").unwrap();
 
                       // 设置窗口标题
