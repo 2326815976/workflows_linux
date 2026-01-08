@@ -86,7 +86,14 @@ jobs:
               "frontendDist": "../dist"
             },
             "app": {
-              "windows": [{"title": "App", "width": 1200, "height": 800, "resizable": true, "fullscreen": false}],
+              "windows": [{
+                "title": "App",
+                "width": 1200,
+                "height": 800,
+                "resizable": true,
+                "fullscreen": false,
+                "transparent": false
+              }],
               "security": {"csp": null}
             },
             "bundle": {
@@ -135,26 +142,32 @@ jobs:
 
           fn load_config_from_bundle() -> Option<AppConfig> {
               let exe_path = std::env::current_exe().ok()?;
+              // 解析符号链接，获取真实路径
+              let exe_path = exe_path.canonicalize().unwrap_or(exe_path);
+              let exe_dir = exe_path.parent()?;
 
-              // AppImage: 配置文件在 $APPDIR/usr/share/tauri-shell/resources/
-              if let Ok(appdir) = std::env::var("APPDIR") {
-                  let appimage_path = PathBuf::from(&appdir)
-                      .join("usr/share/tauri-shell/resources/app-config.json");
-                  if let Ok(config_str) = fs::read_to_string(&appimage_path) {
-                      return serde_json::from_str(&config_str).ok();
+              // 尝试多个可能的配置文件位置
+              let possible_paths = [
+                  exe_dir.join("resources").join("app-config.json"),
+                  exe_dir.join("app-config.json"),
+                  // AppImage 路径
+                  std::env::var("APPDIR").ok().map(|appdir| {
+                      PathBuf::from(appdir).join("usr/share/tauri-shell/resources/app-config.json")
+                  }).unwrap_or_default(),
+              ];
+
+              for path in possible_paths.iter() {
+                  if path.as_os_str().is_empty() {
+                      continue;
+                  }
+                  if let Ok(config_str) = fs::read_to_string(path) {
+                      if let Ok(config) = serde_json::from_str(&config_str) {
+                          return Some(config);
+                      }
                   }
               }
 
-              // 备用：可执行文件同级目录的 resources 文件夹
-              let resources_path = exe_path.parent()?.join("resources").join("app-config.json");
-              if let Ok(config_str) = fs::read_to_string(&resources_path) {
-                  return serde_json::from_str(&config_str).ok();
-              }
-
-              // 备用：可执行文件同级目录
-              let alt_path = exe_path.parent()?.join("app-config.json");
-              let config_str = fs::read_to_string(&alt_path).ok()?;
-              serde_json::from_str(&config_str).ok()
+              None
           }
           RUSTEOF
 
@@ -200,10 +213,16 @@ jobs:
 
           安装脚本会自动完成：
           - 检测并安装 WebKit 依赖
-          - 复制程序到 `~/.local/bin/`
+          - 复制程序到 `~/.local/share/应用名/`
           - 创建应用菜单快捷方式
           - 创建桌面图标
           - 询问是否立即启动
+
+          ## 卸载
+
+          ```bash
+          ~/.local/share/应用名/uninstall.sh
+          ```
 
           ## 手动运行（不安装）
 
@@ -218,8 +237,9 @@ jobs:
           # Arch Linux:
           sudo pacman -S webkit2gtk-4.1
 
-          # 2. 运行
-          chmod +x tauri-shell && ./tauri-shell
+          # 2. 运行（设置环境变量解决渲染问题）
+          chmod +x tauri-shell
+          WEBKIT_DISABLE_COMPOSITING_MODE=1 ./tauri-shell
           ```
 
           ## 常见问题
@@ -234,6 +254,13 @@ jobs:
 
           ### 桌面图标无法启动
           右键图标 → 属性 → 权限 → 允许执行
+
+          ### 页面显示黑色遮挡
+          这是 WebKit 渲染问题，安装脚本已自动配置环境变量解决。
+          如果手动运行，请使用：
+          ```bash
+          WEBKIT_DISABLE_COMPOSITING_MODE=1 ./tauri-shell
+          ```
           READMEEOF
 
           # 创建安装脚本
@@ -293,8 +320,16 @@ jobs:
           cp "$SCRIPT_DIR/resources/app-config.json" "$APP_DIR/resources/"
           cp "$SCRIPT_DIR/resources/icon.png" "$APP_DIR/resources/"
 
-          # 创建符号链接到 PATH
-          ln -sf "$APP_DIR/${APP_NAME}" "$BIN_DIR/${APP_NAME}"
+          # 创建启动脚本（设置环境变量解决 WebKit 渲染问题）
+          cat > "$APP_DIR/start.sh" << STARTEOF
+          #!/bin/bash
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          exec "\$(dirname "\$0")/${APP_NAME}" "\$@"
+          STARTEOF
+          chmod +x "$APP_DIR/start.sh"
+
+          # 创建符号链接到 PATH（指向启动脚本）
+          ln -sf "$APP_DIR/start.sh" "$BIN_DIR/${APP_NAME}"
 
           # 复制图标
           cp "$SCRIPT_DIR/resources/icon.png" "$ICON_DIR/${APP_NAME}.png"
@@ -303,7 +338,7 @@ jobs:
           cat > "$DESKTOP_DIR/${APP_NAME,,}.desktop" << EOF
           [Desktop Entry]
           Name=$APP_NAME
-          Exec=$APP_DIR/${APP_NAME}
+          Exec=env WEBKIT_DISABLE_COMPOSITING_MODE=1 $APP_DIR/${APP_NAME}
           Icon=$ICON_DIR/${APP_NAME}.png
           Type=Application
           Categories=Utility;
@@ -328,13 +363,51 @@ jobs:
           echo "✅ 安装完成！"
           echo "📍 应用目录: $APP_DIR"
           echo "🖥️ 可从应用菜单启动，或运行: ${APP_NAME}"
+          echo "🗑️ 卸载请运行: $APP_DIR/uninstall.sh"
           echo ""
+
+          # 创建卸载脚本
+          cat > "$APP_DIR/uninstall.sh" << UNINSTALLEOF
+          #!/bin/bash
+          APP_NAME="${APP_NAME}"
+          APP_DIR="$APP_DIR"
+          BIN_DIR="$BIN_DIR"
+          DESKTOP_DIR="$DESKTOP_DIR"
+          ICON_DIR="$ICON_DIR"
+
+          echo "🗑️ 正在卸载 \$APP_NAME..."
+
+          # 删除符号链  
+          rm -f "\$BIN_DIR/\$APP_NAME"
+
+          # 删除桌面快捷方式
+          rm -f "\$DESKTOP_DIR/\${APP_NAME,,}.desktop"
+
+          # 删除桌面图标
+          USER_DESKTOP="\$HOME/Desktop"
+          [ ! -d "\$USER_DESKTOP" ] && USER_DESKTOP="\$HOME/桌面"
+          rm -f "\$USER_DESKTOP/\${APP_NAME,,}.desktop" 2>/dev/null
+
+          # 删除图标
+          rm -f "\$ICON_DIR/\$APP_NAME.png"
+
+          # 删除应用目录
+          rm -rf "\$APP_DIR"
+
+          # 更新桌面数据库
+          if command -v update-desktop-database &> /dev/null; then
+              update-desktop-database "\$DESKTOP_DIR" 2>/dev/null || true
+          fi
+
+          echo "✅ 卸载完成！"
+          UNINSTALLEOF
+          chmod +x "$APP_DIR/uninstall.sh"
 
           # 询问是否立即启动
           read -p "是否立即启动应用？[Y/n] " -n 1 -r
           echo
           if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-              "$APP_DIR/${APP_NAME}" &
+              WEBKIT_DISABLE_COMPOSITING_MODE=1 "$APP_DIR/${APP_NAME}" &
           fi
           INSTALLEOF
 
