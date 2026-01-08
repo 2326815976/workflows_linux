@@ -244,7 +244,8 @@ jobs:
           # 获取脚本所在目录
           SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
           APP_NAME="{{APP_NAME}}"
-          INSTALL_DIR="$HOME/.local/bin"
+          APP_DIR="$HOME/.local/share/${APP_NAME}"
+          BIN_DIR="$HOME/.local/bin"
           DESKTOP_DIR="$HOME/.local/share/applications"
           ICON_DIR="$HOME/.local/share/icons"
 
@@ -283,23 +284,26 @@ jobs:
           install_deps
 
           # 创建目录
-          mkdir -p "$INSTALL_DIR" "$DESKTOP_DIR" "$ICON_DIR"
+          mkdir -p "$APP_DIR/resources" "$BIN_DIR" "$DESKTOP_DIR" "$ICON_DIR"
 
-          # 复制应用
+          # 复制应用到独立目录（保持 resources 相对路径）
           echo "📁 安装应用..."
-          cp "$SCRIPT_DIR/tauri-shell" "$INSTALL_DIR/${APP_NAME}"
-          chmod +x "$INSTALL_DIR/${APP_NAME}"
+          cp "$SCRIPT_DIR/tauri-shell" "$APP_DIR/${APP_NAME}"
+          chmod +x "$APP_DIR/${APP_NAME}"
+          cp "$SCRIPT_DIR/resources/app-config.json" "$APP_DIR/resources/"
+          cp "$SCRIPT_DIR/resources/icon.png" "$APP_DIR/resources/"
 
-          # 复制配置文件
-          mkdir -p "$INSTALL_DIR/${APP_NAME}_resources"
-          cp "$SCRIPT_DIR/resources/app-config.json" "$INSTALL_DIR/${APP_NAME}_resources/"
+          # 创建符号链接到 PATH
+          ln -sf "$APP_DIR/${APP_NAME}" "$BIN_DIR/${APP_NAME}"
+
+          # 复制图标
           cp "$SCRIPT_DIR/resources/icon.png" "$ICON_DIR/${APP_NAME}.png"
 
           # 创建桌面快捷方式（应用菜单）
           cat > "$DESKTOP_DIR/${APP_NAME,,}.desktop" << EOF
           [Desktop Entry]
           Name=$APP_NAME
-          Exec=$INSTALL_DIR/${APP_NAME}
+          Exec=$APP_DIR/${APP_NAME}
           Icon=$ICON_DIR/${APP_NAME}.png
           Type=Application
           Categories=Utility;
@@ -311,7 +315,6 @@ jobs:
           if [ -d "$USER_DESKTOP" ]; then
               cp "$DESKTOP_DIR/${APP_NAME,,}.desktop" "$USER_DESKTOP/"
               chmod +x "$USER_DESKTOP/${APP_NAME,,}.desktop"
-              # 某些桌面环境需要设置为可信任
               gio set "$USER_DESKTOP/${APP_NAME,,}.desktop" metadata::trusted true 2>/dev/null || true
               echo "🖥️ 已创建桌面图标"
           fi
@@ -323,7 +326,7 @@ jobs:
 
           echo ""
           echo "✅ 安装完成！"
-          echo "📍 应用位置: $INSTALL_DIR/${APP_NAME}"
+          echo "📍 应用目录: $APP_DIR"
           echo "🖥️ 可从应用菜单启动，或运行: ${APP_NAME}"
           echo ""
 
@@ -331,7 +334,7 @@ jobs:
           read -p "是否立即启动应用？[Y/n] " -n 1 -r
           echo
           if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-              "$INSTALL_DIR/${APP_NAME}" &
+              "$APP_DIR/${APP_NAME}" &
           fi
           INSTALLEOF
 
