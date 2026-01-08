@@ -1,4 +1,4 @@
-name: Build Linux Tauri Template (AppImage)
+name: Build Linux Tauri Template
 
 on:
   workflow_dispatch:
@@ -91,14 +91,9 @@ jobs:
             },
             "bundle": {
               "active": true,
-              "targets": ["appimage"],
+              "targets": [],
               "icon": ["icons/icon.png"],
-              "resources": ["resources/*"],
-              "linux": {
-                "appimage": {
-                  "bundleMediaFramework": false
-                }
-              }
+              "resources": ["resources/*"]
             }
           }
           EOF
@@ -169,23 +164,24 @@ jobs:
           convert -size 512x512 xc:'#6495ED' PNG32:tauri-build/src-tauri/icons/icon.png
           cp tauri-build/src-tauri/icons/icon.png tauri-build/src-tauri/resources/icon.png
 
-      - name: Build Linux AppImage
+      - name: Build Linux binary
         run: |
           cd tauri-build
-          cargo tauri build --bundles appimage
+          cargo tauri build
 
       - name: Prepare output package
         run: |
-          # 查找生成的 AppImage
-          APPIMAGE_PATH=$(find tauri-build/src-tauri/target/release/bundle -name "*.AppImage" -type f | head -1)
-          echo "Found AppImage: $APPIMAGE_PATH"
+          # 查找生成的二进制文件
+          BINARY_PATH="tauri-build/src-tauri/target/release/tauri-shell"
+          echo "Found binary: $BINARY_PATH"
+          ls -lh "$BINARY_PATH"
 
           # 创建输出目录
           mkdir -p output/tauri-shell
 
-          # 复制 AppImage
-          cp "$APPIMAGE_PATH" output/tauri-shell/tauri-shell.AppImage
-          chmod +x output/tauri-shell/tauri-shell.AppImage
+          # 复制二进制文件
+          cp "$BINARY_PATH" output/tauri-shell/tauri-shell
+          chmod +x output/tauri-shell/tauri-shell
 
           # 创建 resources 目录和默认配置
           mkdir -p output/tauri-shell/resources
@@ -243,8 +239,8 @@ jobs:
 
           # 复制应用
           echo "📁 安装应用..."
-          cp "$SCRIPT_DIR/tauri-shell.AppImage" "$INSTALL_DIR/${APP_NAME}.AppImage"
-          chmod +x "$INSTALL_DIR/${APP_NAME}.AppImage"
+          cp "$SCRIPT_DIR/tauri-shell" "$INSTALL_DIR/${APP_NAME}"
+          chmod +x "$INSTALL_DIR/${APP_NAME}"
 
           # 复制配置文件
           mkdir -p "$INSTALL_DIR/${APP_NAME}_resources"
@@ -255,7 +251,7 @@ jobs:
           cat > "$DESKTOP_DIR/${APP_NAME,,}.desktop" << EOF
           [Desktop Entry]
           Name=$APP_NAME
-          Exec=$INSTALL_DIR/${APP_NAME}.AppImage
+          Exec=$INSTALL_DIR/${APP_NAME}
           Icon=$ICON_DIR/${APP_NAME}.png
           Type=Application
           Categories=Utility;
@@ -268,15 +264,15 @@ jobs:
 
           echo ""
           echo "✅ 安装完成！"
-          echo "📍 应用位置: $INSTALL_DIR/${APP_NAME}.AppImage"
-          echo "🖥️ 可从应用菜单启动，或运行: ${APP_NAME}.AppImage"
+          echo "📍 应用位置: $INSTALL_DIR/${APP_NAME}"
+          echo "🖥️ 可从应用菜单启动，或运行: ${APP_NAME}"
           echo ""
 
           # 询问是否立即启动
           read -p "是否立即启动应用？[Y/n] " -n 1 -r
           echo
           if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-              "$INSTALL_DIR/${APP_NAME}.AppImage" &
+              "$INSTALL_DIR/${APP_NAME}" &
           fi
           INSTALLEOF
 
