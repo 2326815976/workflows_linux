@@ -121,13 +121,26 @@ jobs:
 
           fn main() {
               let config = load_config();
+              let title = config.title.clone();
               tauri::Builder::default()
                   .setup(move |app| {
                       use tauri::Manager;
+                      use tauri::Emitter;
                       let window = app.get_webview_window("main").unwrap();
-                      window.set_title(&config.title).ok();
-                      window.eval(&format!("window.location.replace('{}')", config.url.replace("'", "\\'"))).ok();
+
+                      // 设置窗口标题
+                      let _ = window.set_title(&config.title);
+
+                      // 导航到目标 URL
+                      let url_str = config.url.clone();
+                      window.eval(&format!("window.location.replace('{}')", url_str.replace("'", "\\'"))).ok();
+
                       Ok(())
+                  })
+                  .on_window_event(move |window, event| {
+                      if let tauri::WindowEvent::Focused(true) = event {
+                          let _ = window.set_title(&title);
+                      }
                   })
                   .run(tauri::generate_context!())
                   .expect("error while running tauri application");
@@ -377,7 +390,7 @@ jobs:
 
           echo "🗑️ 正在卸载 \$APP_NAME..."
 
-          # 删除符号链��
+          # 删除符号链  
           rm -f "\$BIN_DIR/\$APP_NAME"
 
           # 删除桌面快捷方式
