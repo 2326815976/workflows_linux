@@ -188,6 +188,54 @@ jobs:
           echo '{"url":"https://example.com","title":"App"}' > output/tauri-shell/resources/app-config.json
           cp tauri-build/src-tauri/icons/icon.png output/tauri-shell/resources/icon.png
 
+          # 创建 README.md
+          cat > output/tauri-shell/README.md << 'READMEEOF'
+          # Linux App 安装指南
+
+          ## 快速安装
+
+          ```bash
+          chmod +x install.sh && ./install.sh
+          ```
+
+          安装脚本会自动完成：
+          - 检测并安装 WebKit 依赖
+          - 复制程序到 `~/.local/bin/`
+          - 创建应用菜单快捷方式
+          - 创建桌面图标
+          - 询问是否立即启动
+
+          ## 手动运行（不安装）
+
+          ```bash
+          # 1. 安装依赖
+          # Ubuntu/Debian:
+          sudo apt-get install libwebkit2gtk-4.1-0
+
+          # Fedora:
+          sudo dnf install webkit2gtk4.1
+
+          # Arch Linux:
+          sudo pacman -S webkit2gtk-4.1
+
+          # 2. 运行
+          chmod +x tauri-shell && ./tauri-shell
+          ```
+
+          ## 常见问题
+
+          ### Permission denied
+          ```bash
+          chmod +x install.sh tauri-shell
+          ```
+
+          ### 找不到 WebKit 库
+          运行 `install.sh` 会自动安装，或手动安装上述依赖。
+
+          ### 桌面图标无法启动
+          右键图标 → 属性 → 权限 → 允许执行
+          READMEEOF
+
           # 创建安装脚本
           cat > output/tauri-shell/install.sh << 'INSTALLEOF'
           #!/bin/bash
@@ -247,7 +295,7 @@ jobs:
           cp "$SCRIPT_DIR/resources/app-config.json" "$INSTALL_DIR/${APP_NAME}_resources/"
           cp "$SCRIPT_DIR/resources/icon.png" "$ICON_DIR/${APP_NAME}.png"
 
-          # 创建桌面快捷方式
+          # 创建桌面快捷方式（应用菜单）
           cat > "$DESKTOP_DIR/${APP_NAME,,}.desktop" << EOF
           [Desktop Entry]
           Name=$APP_NAME
@@ -256,6 +304,17 @@ jobs:
           Type=Application
           Categories=Utility;
           EOF
+
+          # 创建桌面图标（如果桌面目录存在）
+          USER_DESKTOP="$HOME/Desktop"
+          [ ! -d "$USER_DESKTOP" ] && USER_DESKTOP="$HOME/桌面"
+          if [ -d "$USER_DESKTOP" ]; then
+              cp "$DESKTOP_DIR/${APP_NAME,,}.desktop" "$USER_DESKTOP/"
+              chmod +x "$USER_DESKTOP/${APP_NAME,,}.desktop"
+              # 某些桌面环境需要设置为可信任
+              gio set "$USER_DESKTOP/${APP_NAME,,}.desktop" metadata::trusted true 2>/dev/null || true
+              echo "🖥️ 已创建桌面图标"
+          fi
 
           # 更新桌面数据库
           if command -v update-desktop-database &> /dev/null; then
